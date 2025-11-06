@@ -1,22 +1,64 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AlertCircle, Users, Coffee, FileText, MessageSquare, Image, Send, Download, CheckCircle, Clock, UserCheck, AlertTriangle, Megaphone, Eye, LogOut, Calendar, TrendingUp } from 'lucide-react';
-import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, set, get, onValue, push, update } from 'firebase/database';
 
-// Firebase configuration using environment variables
+// Firebase configuration placeholder - YOU WILL REPLACE THIS
 const firebaseConfig = {
-  apiKey: process.env.VITE_FIREBASE_API_KEY,
-  authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN,
-  databaseURL: process.env.VITE_FIREBASE_DATABASE_URL,
-  projectId: process.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.VITE_FIREBASE_APP_ID
+  apiKey: "YOUR_API_KEY_HERE",
+  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT_ID.appspot.com",
+  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+  appId: "YOUR_APP_ID",
+  databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com"
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const database = getDatabase(app);
+// Simple Firebase Realtime Database wrapper
+class FirebaseDB {
+  constructor(config) {
+    this.baseUrl = config.databaseURL;
+    this.initialized = false;
+  }
+
+  async get(path) {
+    try {
+      const response = await fetch(`${this.baseUrl}/${path}.json`);
+      return await response.json();
+    } catch (e) {
+      console.error('Firebase get error:', e);
+      return null;
+    }
+  }
+
+  async set(path, data) {
+    try {
+      const response = await fetch(`${this.baseUrl}/${path}.json`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+        headers: { 'Content-Type': 'application/json' }
+      });
+      return await response.json();
+    } catch (e) {
+      console.error('Firebase set error:', e);
+      return null;
+    }
+  }
+
+  async update(path, data) {
+    try {
+      const response = await fetch(`${this.baseUrl}/${path}.json`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+        headers: { 'Content-Type': 'application/json' }
+      });
+      return await response.json();
+    } catch (e) {
+      console.error('Firebase update error:', e);
+      return null;
+    }
+  }
+}
+
+const db = new FirebaseDB(firebaseConfig);
 
 const WeAnswerDispatch = () => {
   const [currentUser, setCurrentUser] = useState(null);
@@ -31,7 +73,6 @@ const WeAnswerDispatch = () => {
   const [media, setMedia] = useState([]);
   const [snitchMessages, setSnitchMessages] = useState([]);
   const [schedules, setSchedules] = useState({});
-  // FIX: Added missing state declarations here
   const [clients, setClients] = useState({});
   const [clientAssignments, setClientAssignments] = useState({});
 
@@ -45,12 +86,14 @@ const WeAnswerDispatch = () => {
   const signatureRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
 
+  // Initialize admin account and load data
   useEffect(() => {
-    const initAdmin = async () => {
-      const usersRef = ref(database, 'users');
-      const snapshot = await get(usersRef);
+    const initApp = async () => {
+      setLoading(true);
 
-      if (!snapshot.exists()) {
+      // Check if admin exists, if not create it
+      const existingUsers = await db.get('users');
+      if (!existingUsers) {
         const adminUser = {
           Username: {
             password: 'Password12#',
@@ -60,129 +103,99 @@ const WeAnswerDispatch = () => {
             loginHistory: []
           }
         };
-        await set(usersRef, adminUser);
+        await db.set('users', adminUser);
+
       }
+
+      await loadAllData();
+      setLoading(false);
     };
 
-    initAdmin();
-    setupRealtimeListeners();
+    initApp();
   }, []);
 
-  const setupRealtimeListeners = () => {
-    onValue(ref(database, 'clients'), (snapshot) => {
-  setClients(snapshot.val() || {});
-});
+const loadAllData = async () => {
+  const [
+    loadedUsers,
+    loadedAttendance,
+    loadedBreaks,
+    loadedCoaching,
+    loadedInfractions,
+    loadedMemos,
+    loadedFeed,
+    loadedMedia,
+    loadedSnitch,
+    loadedSchedules,
+    loadedClients,          // ADD THIS
+    loadedAssignments       // ADD THIS
+  ] = await Promise.all([
+    db.get('users'),
+    db.get('attendance'),
+    db.get('breaks'),
+    db.get('coaching-logs'),
+    db.get('infractions'),
+    db.get('memos'),
+    db.get('feed'),
+    db.get('media'),
+    db.get('snitch'),
+    db.get('schedules'),
+    db.get('clients'),      // ADD THIS
+    db.get('client-assignments')  // ADD THIS
+  ]);
 
-onValue(ref(database, 'client-assignments'), (snapshot) => {
-  setClientAssignments(snapshot.val() || {});
-});
-    onValue(ref(database, 'users'), (snapshot) => {
-      setUsers(snapshot.val() || {});
-    });
+  setUsers(loadedUsers || {});
+  setAttendance(loadedAttendance || {});
+  setBreaks(loadedBreaks || {});
+  setCoachingLogs(loadedCoaching || []);
+  setInfractions(loadedInfractions || []);
+  setMemos(loadedMemos || []);
+  setFeed(loadedFeed || []);
+  setMedia(loadedMedia || []);
+  setSnitchMessages(loadedSnitch || []);
+  setSchedules(loadedSchedules || {});
+  setClients(loadedClients || {});              // ADD THIS
+  setClientAssignments(loadedAssignments || {}); // ADD THIS
+};
 
-    onValue(ref(database, 'attendance'), (snapshot) => {
-      setAttendance(snapshot.val() || {});
-    });
-
-    onValue(ref(database, 'breaks'), (snapshot) => {
-      setBreaks(snapshot.val() || {});
-    });
-
-    onValue(ref(database, 'coaching-logs'), (snapshot) => {
-      const data = snapshot.val();
-      setCoachingLogs(data ? Object.values(data) : []);
-    });
-
-    onValue(ref(database, 'infractions'), (snapshot) => {
-      const data = snapshot.val();
-      setInfractions(data ? Object.values(data) : []);
-    });
-
-    onValue(ref(database, 'memos'), (snapshot) => {
-      const data = snapshot.val();
-      // FIX: Removed duplicate state declarations from here
-      // const [schedules, setSchedules] = useState({}); // <--- REMOVED
-      // const [clients, setClients] = useState({}); // <--- REMOVED
-      // const [clientAssignments, setClientAssignments] = useState({}); // <--- REMOVED
-      // const [clients, setClients] = useState({}); // <--- REMOVED
-      // const [clientAssignments, setClientAssignments] = useState({}); // <--- REMOVED
-      setMemos(data ? Object.values(data) : []);
-    });
-
-    onValue(ref(database, 'feed'), (snapshot) => {
-      const data = snapshot.val();
-      setFeed(data ? Object.values(data).sort((a, b) => b.id - a.id) : []);
-    });
-
-    onValue(ref(database, 'media'), (snapshot) => {
-      const data = snapshot.val();
-      setMedia(data ? Object.values(data).sort((a, b) => b.id - a.id) : []);
-    });
-
-    onValue(ref(database, 'snitch'), (snapshot) => {
-      const data = snapshot.val();
-      setSnitchMessages(data ? Object.values(data).sort((a, b) => b.id - a.id) : []);
-    });
-
-    onValue(ref(database, 'schedules'), (snapshot) => {
-      setSchedules(snapshot.val() || {});
-    });
-
-    setLoading(false);
-  };
 
   const handleLogin = async () => {
-    try {
-      const usersRef = ref(database, 'users');
-      const snapshot = await get(usersRef);
-      const userData = snapshot.val();
-
-      // FIX: Define user variable and check for its existence
-      const user = userData ? userData[loginForm.username] : null;
-
-      if (!user) {
-        setError('Invalid username or password! 🚫');
-        return;
-      }
-
-      if (user.password !== loginForm.password) {
-        setError('Wrong password, try again! 🔐');
-        return;
-      }
-
-      if (user.blocked) {
-        setError('Account is blocked! Contact admin. 🚫');
-        return;
-      }
-
-      const today = new Date().toDateString();
-      const userIP = 'DESKTOP-' + Math.random().toString(36).substr(2, 9);
-
-           if (user.role !== user.role) { // This line seems like a bug (user.role !== user.role is always false), but leaving as is.
-        const lastLogin = user.loginHistory?.[user.loginHistory.length - 1];
-        if (lastLogin && lastLogin.date === today && lastLogin.ip !== userIP) {
-          setError('Already logged in from another device today! 🖥️');
-          return;
-        }
-      }
-
-
-      user.loginHistory = user.loginHistory || [];
-      user.loginHistory.push({ date: today, ip: userIP, time: new Date().toLocaleTimeString() });
-
-      await update(ref(database, `users/${loginForm.username}`), user);
-
-      // FIX: Removed the entire loadAllData function.
-      // The onValue listeners already handle loading data and keeping it in sync.
-      // Calling them here is redundant and was using incorrect 'db.get' syntax.
-
-      setCurrentUser({ username: loginForm.username, ...user });
-      setView('home');
-      setError('');
-      setSuccess('Welcome back! 🎉');
-    } catch (error) {
-      setError('Login failed: ' + error.message);
+    const userData = await db.get('users');
+    if (!userData || !userData[loginForm.username]) {
+      setError('Invalid username or password! 🚫');
+      return;
     }
+
+    if (user.password !== loginForm.password) {
+  setError('Wrong password, try again! 🔐');
+  return;
+}
+
+if (user.blocked) {
+  setError('Account is blocked! Contact admin. 🚫');
+  return;
+}
+
+    // Check IP restriction for employees
+    const today = new Date().toDateString();
+    const userIP = 'DESKTOP-' + Math.random().toString(36).substr(2, 9);
+
+    if (user.role !== user.role) {
+      const lastLogin = user.loginHistory?.[user.loginHistory.length - 1];
+      if (lastLogin && lastLogin.date === today && lastLogin.ip !== userIP) {
+        setError('Already logged in from another device today! 🖥️');
+        return;
+      }
+    }
+
+    user.loginHistory = user.loginHistory || [];
+    user.loginHistory.push({ date: today, ip: userIP, time: new Date().toLocaleTimeString() });
+    userData[loginForm.username] = user;
+    await db.set('users', userData);
+
+    setCurrentUser({ username: loginForm.username, ...user });
+    setView('home');
+    setError('');
+    setSuccess('Welcome back! 🎉');
   };
 
   const handleRegister = async () => {
@@ -191,270 +204,343 @@ onValue(ref(database, 'client-assignments'), (snapshot) => {
       return;
     }
 
-    try {
-      const usersRef = ref(database, 'users');
-      const snapshot = await get(usersRef);
-      const userData = snapshot.val() || {};
-
-      if (userData[registerForm.username]) {
-        setError('Username already exists! 👥');
-        return;
-      }
-
-      await update(ref(database, `users/${registerForm.username}`), {
-        password: registerForm.password,
-        role: 'employee',
-        employeeId: registerForm.employeeId,
-        name: registerForm.name,
-        loginHistory: []
-      });
-
-      setSuccess('Account created! Login now! 🎊');
-      setError('');
-      setRegisterForm({ username: '', password: '', employeeId: '', name: '' });
-    } catch (error) {
-      setError('Registration failed: ' + error.message);
+    const userData = await db.get('users') || {};
+    if (userData[registerForm.username]) {
+      setError('Username already exists! 👥');
+      return;
     }
+
+    userData[registerForm.username] = {
+      password: registerForm.password,
+      role: 'employee',
+      employeeId: registerForm.employeeId,
+      name: registerForm.name,
+      loginHistory: []
+    };
+
+    await db.set('users', userData);
+    setSuccess('Account created! Login now! 🎊');
+    setError('');
+    setRegisterForm({ username: '', password: '', employeeId: '', name: '' });
   };
 
   const markPresent = async () => {
     const today = new Date().toDateString();
+    const attendanceData = await db.get('attendance') || {};
 
-    try {
-      await update(ref(database, `attendance/${today}/${currentUser.employeeId}`), {
-        status: 'present',
-        time: new Date().toLocaleTimeString(),
-        approved: false,
-        username: currentUser.username,
-        name: currentUser.name
-      });
+    if (!attendanceData[today]) attendanceData[today] = {};
 
-      addToFeed(`${currentUser.name} has arrived! 🎯`, 'attendance');
-      setSuccess('Marked present! Waiting for admin approval... ⏳');
-    } catch (error) {
-      setError('Failed to mark attendance: ' + error.message);
-    }
+    attendanceData[today][currentUser.employeeId] = {
+      status: 'present',
+      time: new Date().toLocaleTimeString(),
+      approved: false,
+      username: currentUser.username,
+      name: currentUser.name
+    };
+
+    await db.set('attendance', attendanceData);
+    setAttendance(attendanceData);
+    addToFeed(`${currentUser.name} has arrived! 🎯`, 'attendance');
+    setSuccess('Marked present! Waiting for admin approval... ⏳');
   };
 
   const startBreak = async (type) => {
     const now = new Date();
+    const breakData = await db.get('breaks') || {};
     const today = now.toDateString();
 
-    try {
-      const breaksRef = ref(database, `breaks/${today}/${currentUser.employeeId}`);
-      const snapshot = await get(breaksRef);
-      const existingBreaks = snapshot.val() || [];
+    if (!breakData[today]) breakData[today] = {};
+    if (!breakData[today][currentUser.employeeId]) breakData[today][currentUser.employeeId] = [];
 
-      const newBreak = {
-        type,
-        start: now.toISOString(),
-        end: null,
-        approved: false,
-        username: currentUser.username,
-        name: currentUser.name
-      };
+    const newBreak = {
+      type,
+      start: now.toISOString(),
+      end: null,
+      approved: false,
+      username: currentUser.username,
+      name: currentUser.name
+    };
 
-      existingBreaks.push(newBreak);
-      await set(breaksRef, existingBreaks);
+    breakData[today][currentUser.employeeId].push(newBreak);
+    await db.set('breaks', breakData);
+    setBreaks(breakData);
+    setActiveBreak({ type, start: now, index: breakData[today][currentUser.employeeId].length - 1 });
 
-      setActiveBreak({ type, start: now, index: existingBreaks.length - 1 });
-
-      const emoji = type === 'lunch' ? '🍕' : type === 'rr' ? '🚽' : '☕';
-      addToFeed(`${currentUser.name} is on ${type}! ${emoji}`, 'break');
-    } catch (error) {
-      setError('Failed to start break: ' + error.message);
-    }
+    const emoji = type === 'lunch' ? '🍕' : type === 'rr' ? '🚽' : '☕';
+    addToFeed(`${currentUser.name} is on ${type}! ${emoji}`, 'break');
   };
 
   const endBreak = async () => {
     if (!activeBreak) return;
 
     const now = new Date();
+    const breakData = await db.get('breaks') || {};
     const today = now.toDateString();
 
-    try {
-      const breaksRef = ref(database, `breaks/${today}/${currentUser.employeeId}`);
-      const snapshot = await get(breaksRef);
-      const userBreaks = snapshot.val() || [];
+    const userBreaks = breakData[today][currentUser.employeeId];
+    userBreaks[activeBreak.index].end = now.toISOString();
 
-      userBreaks[activeBreak.index].end = now.toISOString();
-      await set(breaksRef, userBreaks);
+    const duration = (now - new Date(activeBreak.start)) / 60000;
+    const limits = { 'break1': 15, 'break2': 15, 'lunch': 60 };
 
-      const duration = (now - new Date(activeBreak.start)) / 60000;
-      const limits = { 'break1': 15, 'break2': 15, 'lunch': 60 };
-
-      if (limits[activeBreak.type] && duration > limits[activeBreak.type]) {
-        addToFeed(`⚠️ ${currentUser.name} exceeded ${activeBreak.type} by ${Math.round(duration - limits[activeBreak.type])} mins!`, 'alert');
-      }
-
-      setActiveBreak(null);
-      addToFeed(`${currentUser.name} is back from ${activeBreak.type}! 🔙`, 'break');
-    } catch (error) {
-      setError('Failed to end break: ' + error.message);
+    if (limits[activeBreak.type] && duration > limits[activeBreak.type]) {
+      addToFeed(`⚠️ ${currentUser.name} exceeded ${activeBreak.type} by ${Math.round(duration - limits[activeBreak.type])} mins!`, 'alert');
     }
+
+    await db.set('breaks', breakData);
+    setBreaks(breakData);
+    setActiveBreak(null);
+    addToFeed(`${currentUser.name} is back from ${activeBreak.type}! 🔙`, 'break');
   };
 
   const addToFeed = async (message, type) => {
-    try {
-      const feedRef = ref(database, 'feed');
-      const newFeedRef = push(feedRef);
+    const feedData = await db.get('feed') || [];
+    feedData.unshift({
+      id: Date.now(),
+      message,
+      type,
+      timestamp: new Date().toISOString(),
+      author: currentUser?.name || 'System'
+    });
 
-      await set(newFeedRef, {
-        id: Date.now(),
-        message,
-        type,
-        timestamp: new Date().toISOString(),
-        author: currentUser?.name || 'System'
-      });
-    } catch (error) {
-      console.error('Failed to add to feed:', error);
-    }
+    if (feedData.length > 100) feedData.pop();
+
+    await db.set('feed', feedData);
+    setFeed(feedData);
   };
 
   const postCoachingLog = async (employeeId, content) => {
-    try {
-      const logsRef = ref(database, 'coaching-logs');
-      const newLogRef = push(logsRef);
-
-      await set(newLogRef, {
-        id: Date.now(),
-        employeeId,
-        content,
-        date: new Date().toISOString(),
-        acknowledged: false,
-        signature: null,
-        comment: ''
-      });
-
-      addToFeed(`📋 New coaching log posted for ${employeeId}`, 'coaching');
-    } catch (error) {
-      setError('Failed to post coaching log: ' + error.message);
-    }
+    const logs = await db.get('coaching-logs') || [];
+    logs.push({
+      id: Date.now(),
+      employeeId,
+      content,
+      date: new Date().toISOString(),
+      acknowledged: false,
+      signature: null,
+      comment: ''
+    });
+    await db.set('coaching-logs', logs);
+    setCoachingLogs(logs);
+    addToFeed(`📋 New coaching log posted for ${employeeId}`, 'coaching');
   };
 
   const postInfraction = async (employeeId, content, severity) => {
-    try {
-      const irsRef = ref(database, 'infractions');
-      const newIrRef = push(irsRef);
-
-      await set(newIrRef, {
-        id: Date.now(),
-        employeeId,
-        content,
-        severity,
-        date: new Date().toISOString(),
-        acknowledged: false,
-        signature: null,
-        comment: ''
-      });
-
-      addToFeed(`⚠️ Infraction report issued to ${employeeId}`, 'infraction');
-    } catch (error) {
-      setError('Failed to post infraction: ' + error.message);
-    }
+    const irs = await db.get('infractions') || [];
+    irs.push({
+      id: Date.now(),
+      employeeId,
+      content,
+      severity,
+      date: new Date().toISOString(),
+      acknowledged: false,
+      signature: null,
+      comment: ''
+    });
+    await db.set('infractions', irs);
+    setInfractions(irs);
+    addToFeed(`⚠️ Infraction report issued to ${employeeId}`, 'infraction');
   };
 
   const postMemo = async (title, content) => {
-    try {
-      const memosRef = ref(database, 'memos');
-      const newMemoRef = push(memosRef);
-
-      await set(newMemoRef, {
-        id: Date.now(),
-        title,
-        content,
-        date: new Date().toISOString(),
-        acknowledgedBy: {}
-      });
-
-      addToFeed(`📢 New memo: ${title}`, 'memo');
-    } catch (error) {
-      setError('Failed to post memo: ' + error.message);
-    }
+    const memoData = await db.get('memos') || [];
+    memoData.push({
+      id: Date.now(),
+      title,
+      content,
+      date: new Date().toISOString(),
+      acknowledgedBy: {}
+    });
+    await db.set('memos', memoData);
+    setMemos(memoData);
+    addToFeed(`📢 New memo: ${title}`, 'memo');
   };
 
   const acknowledgeWithSignature = async (type, id, comment, signature) => {
-    try {
-      if (type === 'coaching') {
-        const logsRef = ref(database, 'coaching-logs');
-        const snapshot = await get(logsRef);
-        const data = snapshot.val();
-
-        for (let key in data) {
-          if (data[key].id === id) {
-            await update(ref(database, `coaching-logs/${key}`), {
-              acknowledged: true,
-              signature,
-              comment
-            });
-            break;
-          }
-        }
-      } else if (type === 'infraction') {
-        const irsRef = ref(database, 'infractions');
-        const snapshot = await get(irsRef);
-        const data = snapshot.val();
-
-        for (let key in data) {
-          if (data[key].id === id) {
-            await update(ref(database, `infractions/${key}`), {
-              acknowledged: true,
-              signature,
-              comment
-            });
-            break;
-          }
-        }
-      } else if (type === 'memo') {
-        const memosRef = ref(database, 'memos');
-        const snapshot = await get(memosRef);
-        const data = snapshot.val();
-
-        for (let key in data) {
-          if (data[key].id === id) {
-            await update(ref(database, `memos/${key}/acknowledgedBy/${currentUser.employeeId}`), {
-              signature,
-              date: new Date().toISOString(),
-              name: currentUser.name
-            });
-            break;
-          }
-        }
+    let data;
+    if (type === 'coaching') {
+      data = await db.get('coaching-logs') || [];
+      const item = data.find(i => i.id === id);
+      if (item) {
+        item.acknowledged = true;
+        item.signature = signature;
+        item.comment = comment;
       }
-      setSuccess('Acknowledged! ✅');
-    } catch (error) {
-      setError('Failed to acknowledge: ' + error.message);
+      await db.set('coaching-logs', data);
+      setCoachingLogs(data);
+    } else if (type === 'infraction') {
+      data = await db.get('infractions') || [];
+      const item = data.find(i => i.id === id);
+      if (item) {
+        item.acknowledged = true;
+        item.signature = signature;
+        item.comment = comment;
+      }
+      await db.set('infractions', data);
+      setInfractions(data);
+    } else if (type === 'memo') {
+      data = await db.get('memos') || [];
+      const item = data.find(i => i.id === id);
+      if (item) {
+        item.acknowledgedBy[currentUser.employeeId] = {
+          signature,
+          date: new Date().toISOString(),
+          name: currentUser.name
+        };
+      }
+      await db.set('memos', data);
+      setMemos(data);
     }
+    setSuccess('Acknowledged! ✅');
   };
-
-// FIX: Removed the first (incorrect) set of functions
-// const setUserSchedule = ... (REMOVED)
-// const addClient = ... (REMOVED)
-// const assignUserToClient = ... (REMOVED)
-// const generateCoverageReport = ... (REMOVED)
-// const calculateAdherence = ... (REMOVED)
-
 
   const sendSnitchMessage = async (message) => {
-    try {
-      const snitchRef = ref(database, 'snitch');
-      const newSnitchRef = push(snitchRef);
+    const messages = await db.get('snitch') || [];
+    messages.push({
+      id: Date.now(),
+      employeeId: currentUser.employeeId,
+      message,
+      date: new Date().toISOString(),
+      read: false
+    });
+    await db.set('snitch', messages);
+    setSnitchMessages(messages);
+    setSuccess('Message sent confidentially! 🤫');
+  };
 
-      await set(newSnitchRef, {
-        id: Date.now(),
-        employeeId: currentUser.employeeId,
-        message,
-        date: new Date().toISOString(),
-        read: false
-      });
-
-      setSuccess('Message sent confidentially! 🤫');
-    } catch (error) {
-      setError('Failed to send message: ' + error.message);
+  const approveAttendance = async (date, employeeId) => {
+    const attendanceData = await db.get('attendance') || {};
+    if (attendanceData[date] && attendanceData[date][employeeId]) {
+      attendanceData[date][employeeId].approved = true;
+      await db.set('attendance', attendanceData);
+      setAttendance(attendanceData);
+      setSuccess('Attendance approved! ✅');
     }
   };
 
-  // FIX: This is the correct set of functions that use the 'firebase/database' methods
+  const approveBreak = async (date, employeeId, breakIndex) => {
+    const breakData = await db.get('breaks') || {};
+    if (breakData[date] && breakData[date][employeeId] && breakData[date][employeeId][breakIndex]) {
+      breakData[date][employeeId][breakIndex].approved = true;
+      await db.set('breaks', breakData);
+      setBreaks(breakData);
+      setSuccess('Break approved! ✅');
+    }
+  };
+
+  // Schedule Management
+const setUserSchedule = async (employeeId, schedule) => {
+  const scheduleData = await db.get('schedules') || {};
+  scheduleData[employeeId] = {
+    ...schedule,
+    updatedBy: currentUser.username,
+    updatedAt: new Date().toISOString()
+  };
+  await db.set('schedules', scheduleData);
+  setSchedules(scheduleData);
+  addToFeed(`📅 Schedule updated for ${employeeId}`, 'schedule');
+  setSuccess('Schedule updated successfully! ✅');
+};
+
+// Client Management
+const addClient = async (clientName, businessHours) => {
+  const clientData = await db.get('clients') || {};
+  const clientId = 'CLIENT_' + Date.now();
+  clientData[clientId] = {
+    name: clientName,
+    businessHours: businessHours, // { monday: {start: '08:00', end: '17:00'}, ... }
+    createdAt: new Date().toISOString(),
+    createdBy: currentUser.username
+  };
+  await db.set('clients', clientData);
+  setClients(clientData);
+  addToFeed(`🏢 New client added: ${clientName}`, 'client');
+  setSuccess('Client added successfully! ✅');
+};
+
+// Assign users to clients
+const assignUserToClient = async (employeeId, clientId) => {
+  const assignments = await db.get('client-assignments') || {};
+  if (!assignments[clientId]) assignments[clientId] = [];
+  if (!assignments[clientId].includes(employeeId)) {
+    assignments[clientId].push(employeeId);
+  }
+  await db.set('client-assignments', assignments);
+  setClientAssignments(assignments);
+  addToFeed(`👤 User ${employeeId} assigned to client`, 'assignment');
+  setSuccess('User assigned to client! ✅');
+};
+
+// Generate coverage report
+const generateCoverageReport = (clientId, date) => {
+  const client = clients[clientId];
+  const assignments = clientAssignments[clientId] || [];
+  const dateStr = new Date(date).toDateString();
+
+  const report = {
+    clientName: client?.name,
+    date: dateStr,
+    businessHours: client?.businessHours,
+    coverage: []
+  };
+
+  assignments.forEach(empId => {
+    const userSchedule = schedules[empId];
+    const userAttendance = attendance[dateStr]?.[empId];
+    const userBreaks = breaks[dateStr]?.[empId] || [];
+
+    report.coverage.push({
+      employeeId: empId,
+      scheduled: userSchedule,
+      attended: userAttendance,
+      breaks: userBreaks,
+      adherence: calculateAdherence(userSchedule, userAttendance, userBreaks)
+    });
+  });
+
+  return report;
+};
+
+const calculateAdherence = (schedule, attendance, breaks) => {
+  if (!schedule || !attendance) return 0;
+  // Add logic to calculate schedule adherence percentage
+  return 100; // Placeholder
+};
+
+  // Signature pad functions
+  const startDrawing = (e) => {
+    if (!signatureRef.current) return;
+    setIsDrawing(true);
+    const rect = signatureRef.current.getBoundingClientRect();
+    const ctx = signatureRef.current.getContext('2d');
+    ctx.beginPath();
+    ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+  };
+
+  const draw = (e) => {
+    if (!isDrawing || !signatureRef.current) return;
+    const rect = signatureRef.current.getBoundingClientRect();
+    const ctx = signatureRef.current.getContext('2d');
+    ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+    ctx.stroke();
+  };
+
+  const stopDrawing = () => {
+    setIsDrawing(false);
+  };
+
+  const clearSignature = () => {
+    if (!signatureRef.current) return;
+    const ctx = signatureRef.current.getContext('2d');
+    ctx.clearRect(0, 0, signatureRef.current.width, signatureRef.current.height);
+  };
+
+  const getSignature = () => {
+    return signatureRef.current ? signatureRef.current.toDataURL() : null;
+  };
+
+
+
   const setUserSchedule = async (employeeId, schedule) => {
   try {
     await update(ref(database, `schedules/${employeeId}`), {
@@ -500,7 +586,7 @@ const updateClient = async (clientId, clientName, businessHours) => {
 };
 
 const deleteClient = async (clientId) => {
-  // FIX: Removed window.confirm
+  if (!window.confirm('Are you sure you want to delete this client?')) return;
   try {
     await set(ref(database, `clients/${clientId}`), null);
     await set(ref(database, `client-assignments/${clientId}`), null);
@@ -542,7 +628,7 @@ const removeUserFromClient = async (employeeId, clientId) => {
 };
 
 const blockUser = async (username) => {
-  // FIX: Removed window.confirm
+  if (!window.confirm(`Block user ${username}?`)) return;
   try {
     await update(ref(database, `users/${username}`), { blocked: true });
     setSuccess('User blocked! 🚫');
@@ -561,7 +647,7 @@ const unblockUser = async (username) => {
 };
 
 const deleteUser = async (username) => {
-  // FIX: Removed window.confirm
+  if (!window.confirm(`Delete user ${username}? This cannot be undone!`)) return;
   try {
     await set(ref(database, `users/${username}`), null);
     setSuccess('User deleted! 🗑️');
@@ -570,7 +656,6 @@ const deleteUser = async (username) => {
   }
 };
 
-// FIX: This is the correct, detailed report function
 const calculateCoverageReport = (clientId, date) => {
   const client = clients[clientId];
   if (!client) return null;
@@ -643,59 +728,7 @@ const calculateCoverageReport = (clientId, date) => {
   return report;
 };
 
-  const approveAttendance = async (date, employeeId) => {
-    try {
-      await update(ref(database, `attendance/${date}/${employeeId}`), {
-        approved: true
-      });
-      setSuccess('Attendance approved! ✅');
-    } catch (error) {
-      setError('Failed to approve: ' + error.message);
-    }
-  };
-
-  const approveBreak = async (date, employeeId, breakIndex) => {
-    try {
-      await update(ref(database, `breaks/${date}/${employeeId}/${breakIndex}`), {
-        approved: true
-      });
-      setSuccess('Break approved! ✅');
-    } catch (error) {
-      setError('Failed to approve break: ' + error.message);
-    }
-  };
-
-  const startDrawing = (e) => {
-    if (!signatureRef.current) return;
-    setIsDrawing(true);
-    const rect = signatureRef.current.getBoundingClientRect();
-    const ctx = signatureRef.current.getContext('2d');
-    ctx.beginPath();
-    ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
-  };
-
-  const draw = (e) => {
-    if (!isDrawing || !signatureRef.current) return;
-    const rect = signatureRef.current.getBoundingClientRect();
-    const ctx = signatureRef.current.getContext('2d');
-    ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
-    ctx.stroke();
-  };
-
-  const stopDrawing = () => {
-    setIsDrawing(false);
-  };
-
-  const clearSignature = () => {
-    if (!signatureRef.current) return;
-    const ctx = signatureRef.current.getContext('2d');
-    ctx.clearRect(0, 0, signatureRef.current.width, signatureRef.current.height);
-  };
-
-  const getSignature = () => {
-    return signatureRef.current ? signatureRef.current.toDataURL() : null;
-  };
-
+  // Export functions
   const exportAttendanceCSV = () => {
     let csv = 'Date,Employee ID,Name,Status,Time,Approved\n';
     Object.entries(attendance).forEach(([date, records]) => {
@@ -731,8 +764,10 @@ const calculateCoverageReport = (clientId, date) => {
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-600 via-pink-500 to-red-500 flex items-center justify-center">
-        <div className="bg-white rounded-2xl shadow-2xl p-8">
-          <h2 className="text-2xl font-bold text-center">Loading... 🚀</h2>
+        <div className="bg-white rounded-2xl shadow-2xl p-8 text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-purple-600 mx-auto mb-4"></div>
+          <h2 className="text-2xl font-bold text-gray-800">Loading WeAnswer Dispatch...</h2>
+          <p className="text-gray-600 mt-2">Connecting to Firebase 🚀</p>
         </div>
       </div>
     );
@@ -826,8 +861,6 @@ const calculateCoverageReport = (clientId, date) => {
     );
   }
 
-  // ... rest of the component continues in next message due to length
-
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-gradient-to-r from-purple-600 via-pink-500 to-red-500 text-white p-4 shadow-lg">
@@ -881,19 +914,19 @@ const calculateCoverageReport = (clientId, date) => {
               <button onClick={() => setView('memos')} className="bg-indigo-500 text-white px-4 py-2 rounded font-bold hover:bg-indigo-600 transition">
                 📢 Memos
               </button>
+
               <button onClick={() => setView('snitch')} className="bg-gray-700 text-white px-4 py-2 rounded font-bold hover:bg-gray-800 transition">
                 🤫 Snitch Line
               </button>
-           <button onClick={() => setView('clients')} className="bg-teal-500 text-white px-4 py-2 rounded font-bold hover:bg-teal-600 transition">
+              <button onClick={() => setView('clients')} className="bg-teal-500 text-white px-4 py-2 rounded font-bold hover:bg-teal-600 transition">
   🏢 Clients
 </button>
 <button onClick={() => setView('users')} className="bg-orange-500 text-white px-4 py-2 rounded font-bold hover:bg-orange-600 transition">
   👥 Manage Users
 </button>
-            {/* Added schedules button */}
-            <button onClick={() => setView('schedules')} className="bg-cyan-500 text-white px-4 py-2 rounded font-bold hover:bg-cyan-600 transition">
-              <Calendar size={16} className="inline-block mr-1" /> Schedules
-            </button>
+              <button onClick={() => setView('schedules')} className="bg-cyan-500 text-white px-4 py-2 rounded font-bold hover:bg-cyan-600 transition">
+                📅 Schedules
+              </button>
             </>
           )}
           {currentUser.role !== 'admin' && (
@@ -911,461 +944,42 @@ const calculateCoverageReport = (clientId, date) => {
           </button>
         </div>
 
+        {/* Home view with simplified content */}
         {view === 'home' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
-              <div className="bg-gradient-to-r from-yellow-400 via-red-500 to-pink-500 text-white p-6 rounded-lg shadow-lg mb-6">
-                <h2 className="text-3xl font-bold mb-2">🎉 MAXIMUM CHAOS MODE ACTIVATED 🎉</h2>
-                <p className="text-lg">Where productivity meets memes. Let's get this bread! 🍞</p>
-              </div>
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            <h2 className="text-3xl font-bold mb-4">🎉 Welcome to WeAnswer Dispatch!</h2>
+            <p className="text-lg mb-6">Maximum Chaos, Maximum Productivity! Use the menu above to navigate. 🚀</p>
 
-              <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-                <h3 className="text-xl font-bold mb-4">Quick Actions ⚡</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <button
-                    onClick={markPresent}
-                    className="bg-green-500 text-white p-4 rounded-lg font-bold hover:bg-green-600 transition flex items-center justify-center gap-2"
-                  >
-                    <UserCheck size={20} /> I'm Here! 🎯
-                  </button>
-                  <button
-                    onClick={() => addToFeed(`${currentUser.name} is running late! 🏃`, 'alert')}
-                    className="bg-yellow-500 text-white p-4 rounded-lg font-bold hover:bg-yellow-600 transition flex items-center justify-center gap-2"
-                  >
-                    <Clock size={20} /> I'm Late! ⏰
-                  </button>
-                  <button
-                    onClick={() => addToFeed(`${currentUser.name} is absent today. 😷`, 'alert')}
-                    className="bg-red-500 text-white p-4 rounded-lg font-bold hover:bg-red-600 transition flex items-center justify-center gap-2"
-                  >
-                    <AlertCircle size={20} /> I'm Absent 🤒
-                  </button>
-                  <button
-                    onClick={() => setView('breaks')}
-                    className="bg-purple-500 text-white p-4 rounded-lg font-bold hover:bg-purple-600 transition flex items-center justify-center gap-2"
-                  >
-                    <Coffee size={20} /> Break Time! ☕
-                  </button>
-
-                </div>
-              </div>
-
-              <div className="bg-white rounded-lg shadow-lg p-6">
-                <h3 className="text-xl font-bold mb-4">Team Feed 📣</h3>
-                <div className="space-y-3 max-h-96 overflow-y-auto">
-                  {feed.map(item => (
-                    <div key={item.id} className={`p-4 rounded-lg ${
-                      item.type === 'alert' ? 'bg-red-50 border-l-4 border-red-500' :
-                      item.type === 'coaching' ? 'bg-yellow-50 border-l-4 border-yellow-500' :
-                      item.type === 'break' ? 'bg-green-50 border-l-4 border-green-500' :
-                      'bg-blue-50 border-l-4 border-blue-500'
-                    }`}>
-                      <p className="font-semibold">{item.message}</p>
-                      <p className="text-sm text-gray-600 mt-1">
-                        {item.author} • {new Date(item.timestamp).toLocaleString()}
-                      </p>
-                    </div>
-                  ))}
-                  {feed.length === 0 && (
-                    <p className="text-gray-500 text-center py-8">No activity yet. Make some noise! 📢</p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-                <h3 className="text-xl font-bold mb-4">Today's Status 📊</h3>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between p-3 bg-green-50 rounded">
-                    <span className="font-semibold">Present Today</span>
-                    <span className="text-2xl font-bold text-green-600">
-                      {Object.values(attendance[new Date().toDateString()] || {}).filter(a => a.status === 'present').length}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-blue-50 rounded">
-                    <span className="font-semibold">Active Breaks</span>
-                    <span className="text-2xl font-bold text-blue-600">
-                      {activeBreak ? '1' : '0'}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-purple-50 rounded">
-                    <span className="font-semibold">Team Size</span>
-                    <span className="text-2xl font-bold text-purple-600">
-                      {Object.keys(users).length}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {activeBreak && (
-                <div className="bg-yellow-100 border-2 border-yellow-500 rounded-lg p-6 mb-6">
-                  <h3 className="text-xl font-bold mb-2">⏱️ Break Active!</h3>
-                  <p className="text-lg mb-3">Type: <span className="font-bold">{activeBreak.type.toUpperCase()}</span></p>
-                  <p className="text-sm mb-4">Started: {new Date(activeBreak.start).toLocaleTimeString()}</p>
-                  <button
-                    onClick={endBreak}
-                    className="w-full bg-green-500 text-white p-3 rounded font-bold hover:bg-green-600 transition"
-                  >
-                    End Break 🔙
-                  </button>
-                </div>
-              )}
-
-              <div className="bg-gradient-to-br from-pink-500 to-purple-600 text-white rounded-lg p-6">
-                <h3 className="text-xl font-bold mb-2">💡 Pro Tip</h3>
-                <p className="text-sm">Don't forget to mark your attendance daily! Admin reviews all entries. Stay awesome! 🌟</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Schedule Management View */}
-{/* Schedules View */}
-{view === 'schedules' && currentUser.role === 'admin' && (
-  <div className="bg-white rounded-lg shadow-lg p-6">
-    <h2 className="text-3xl font-bold mb-4">📅 Team Scheduling</h2>
-
-    <div className="mb-6 p-4 bg-blue-50 rounded-lg">
-      <h3 className="text-xl font-bold mb-3">Set User Schedule</h3>
-      <select className="w-full p-3 border rounded mb-3" id="schedule-user">
-        <option value="">Select Employee</option>
-        {Object.entries(users).map(([username, user]) => (
-          user.role !== 'admin' && !user.blocked && (
-            <option key={username} value={user.employeeId}>
-              {user.name} ({user.employeeId})
-            </option>
-          )
-        ))}
-      </select>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
-        {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => (
-          <div key={day} className="border p-3 rounded bg-white">
-            <h4 className="font-bold capitalize mb-2">{day}</h4>
-            <div className="flex gap-2">
-              <input type="time" className="flex-1 p-2 border rounded" placeholder="Start" id={`${day}-start`} />
-              <input type="time" className="flex-1 p-2 border rounded" placeholder="End" id={`${day}-end`} />
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <button
-        onClick={() => {
-          const empId = document.getElementById('schedule-user').value;
-          if (!empId) return setError('Select an employee!');
-
-          const schedule = {};
-          ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].forEach(day => {
-            const start = document.getElementById(`${day}-start`).value;
-            const end = document.getElementById(`${day}-end`).value;
-            if (start && end) {
-              schedule[day] = { start, end };
-            }
-          });
-
-          if (Object.keys(schedule).length === 0) {
-            return setError('Set at least one day schedule!');
-          }
-
-          setUserSchedule(empId, schedule);
-        }}
-        className="bg-blue-500 text-white px-6 py-3 rounded font-bold hover:bg-blue-600"
-      >
-        💾 Save Schedule
-      </button>
-    </div>
-
-    <div>
-      <h3 className="text-xl font-bold mb-3">Current Schedules</h3>
-      <div className="space-y-3">
-        {Object.entries(schedules).map(([empId, schedule]) => {
-          const userName = Object.values(users).find(u => u.employeeId === empId)?.name || empId;
-          return (
-            <div key={empId} className="border p-4 rounded bg-gray-50">
-              <h4 className="font-bold text-lg mb-2">{userName} ({empId})</h4>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                {Object.entries(schedule).map(([day, times]) => (
-                  times && times.start && (
-                    <div key={day} className="text-sm bg-white p-2 rounded">
-                      <strong className="capitalize">{day}:</strong> {times.start} - {times.end}
-                    </div>
-                  )
-                ))}
-              </div>
-            </div>
-          );
-        })}
-        {Object.keys(schedules).length === 0 && (
-          <p className="text-gray-500 text-center py-8">No schedules set yet.</p>
-        )}
-      </div>
-    </div>
-  </div>
-)}
-
-{/* Clients View */}
-{view === 'clients' && currentUser.role === 'admin' && (
-  <div className="bg-white rounded-lg shadow-lg p-6">
-    <h2 className="text-3xl font-bold mb-4">🏢 Client Management</h2>
-
-    <div className="mb-6 p-4 bg-green-50 rounded-lg">
-      <h3 className="text-xl font-bold mb-3">Add New Client</h3>
-      <input
-        type="text"
-        placeholder="Client Name"
-        className="w-full p-3 border rounded mb-3"
-        id="client-name"
-      />
-
-      <h4 className="font-bold mb-2">Business Hours</h4>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
-        {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => (
-          <div key={day} className="border p-3 rounded bg-white">
-            <h4 className="font-bold capitalize mb-2">{day}</h4>
-            <div className="flex gap-2">
-              <input type="time" className="flex-1 p-2 border rounded" id={`client-${day}-start`} />
-              <input type="time" className="flex-1 p-2 border rounded" id={`client-${day}-end`} />
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <button
-        onClick={() => {
-          const name = document.getElementById('client-name').value;
-          if (!name) return setError('Enter client name!');
-
-          const hours = {};
-          ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].forEach(day => {
-            const start = document.getElementById(`client-${day}-start`).value;
-            const end = document.getElementById(`client-${day}-end`).value;
-            if (start && end) {
-              hours[day] = { start, end };
-            }
-          });
-
-          if (Object.keys(hours).length === 0) {
-            return setError('Set at least one business day!');
-          }
-
-          addClient(name, hours);
-          document.getElementById('client-name').value = '';
-          ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].forEach(day => {
-            document.getElementById(`client-${day}-start`).value = '';
-            document.getElementById(`client-${day}-end`).value = '';
-          });
-        }}
-        className="bg-green-500 text-white px-6 py-3 rounded font-bold hover:bg-green-600"
-      >
-        ➕ Add Client
-      </button>
-    </div>
-
-    <div className="mb-6">
-      <h3 className="text-xl font-bold mb-3">Existing Clients</h3>
-      <div className="space-y-4">
-        {Object.entries(clients).map(([clientId, client]) => (
-          <div key={clientId} className="border p-4 rounded bg-blue-50">
-            <div className="flex justify-between items-start mb-3">
-              <div>
-                <h4 className="font-bold text-lg">{client.name}</h4>
-                <p className="text-sm text-gray-600">ID: {clientId}</p>
-              </div>
-              <button
-                onClick={() => deleteClient(clientId)}
-                className="bg-red-500 text-white px-3 py-1 rounded text-sm font-bold hover:bg-red-600"
-              >
-                🗑️ Delete
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+              <button onClick={markPresent} className="bg-green-500 text-white p-4 rounded-lg font-bold hover:bg-green-600">
+                ✅ Mark Present
+              </button>
+              <button onClick={() => setView('breaks')} className="bg-purple-500 text-white p-4 rounded-lg font-bold hover:bg-purple-600">
+                ☕ Take Break
+              </button>
+              <button onClick={() => setView('attendance')} className="bg-blue-500 text-white p-4 rounded-lg font-bold hover:bg-blue-600">
+                📅 View Attendance
+              </button>
+              <button onClick={() => setView('media')} className="bg-pink-500 text-white p-4 rounded-lg font-bold hover:bg-pink-600">
+                📸 Team Gallery
               </button>
             </div>
 
-            <div className="mb-3">
-              <p className="font-semibold mb-2">Business Hours:</p>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                {Object.entries(client.businessHours || {}).map(([day, times]) => (
-                  times && times.start && (
-                    <div key={day} className="text-sm bg-white p-2 rounded">
-                      <strong className="capitalize">{day}:</strong> {times.start} - {times.end}
-                    </div>
-                  )
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h3 className="text-xl font-bold mb-3">Recent Activity 📣</h3>
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {feed.slice(0, 10).map(item => (
+                  <div key={item.id} className="p-3 bg-white rounded border-l-4 border-purple-500">
+                    <p className="font-semibold">{item.message}</p>
+                    <p className="text-sm text-gray-600">{item.author} • {new Date(item.timestamp).toLocaleString()}</p>
+                  </div>
                 ))}
-              </div>
-            </div>
-
-            <div>
-              <p className="font-semibold mb-2">Assigned Users:</p>
-              <div className="flex flex-wrap gap-2">
-                {(clientAssignments[clientId] || []).map(empId => {
-                  const user = Object.values(users).find(u => u.employeeId === empId);
-                  return (
-                    <div key={empId} className="bg-purple-100 px-3 py-1 rounded-full text-sm flex items-center gap-2">
-                      <span>{user?.name || empId}</span>
-                      <button
-                        onClick={() => removeUserFromClient(empId, clientId)}
-                        className="text-red-500 hover:text-red-700"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  );
-                })}
-                {(clientAssignments[clientId] || []).length === 0 && (
-                  <span className="text-gray-500 text-sm">No users assigned</span>
-                )}
+                {feed.length === 0 && <p className="text-gray-500 text-center py-4">No activity yet!</p>}
               </div>
             </div>
           </div>
-        ))}
-        {Object.keys(clients).length === 0 && (
-          <p className="text-gray-500 text-center py-8">No clients yet.</p>
         )}
-      </div>
-    </div>
-
-    <div className="mb-6 p-4 bg-purple-50 rounded-lg">
-      <h3 className="text-xl font-bold mb-3">Assign User to Client</h3>
-      <select className="w-full p-3 border rounded mb-3" id="assign-client">
-        <option value="">Select Client</option>
-        {Object.entries(clients).map(([id, client]) => (
-          <option key={id} value={id}>{client.name}</option>
-        ))}
-      </select>
-
-      <select className="w-full p-3 border rounded mb-3" id="assign-user">
-        <option value="">Select Employee</option>
-        {Object.entries(users).map(([username, user]) => (
-          user.role !== 'admin' && !user.blocked && (
-            <option key={username} value={user.employeeId}>
-              {user.name} ({user.employeeId})
-            </option>
-          )
-        ))}
-      </select>
-
-      <button
-        onClick={() => {
-          const clientId = document.getElementById('assign-client').value;
-          const empId = document.getElementById('assign-user').value;
-          if (!clientId || !empId) return setError('Select both client and employee!');
-          assignUserToClient(empId, clientId);
-        }}
-        className="bg-purple-500 text-white px-6 py-3 rounded font-bold hover:bg-purple-600"
-      >
-        👤 Assign User
-      </button>
-    </div>
-
-    <div className="p-4 bg-indigo-50 rounded-lg">
-      <h3 className="text-xl font-bold mb-3">📊 Coverage Report</h3>
-      <select className="w-full p-3 border rounded mb-3" id="report-client">
-        <option value="">Select Client</option>
-        {Object.entries(clients).map(([id, client]) => (
-          <option key={id} value={id}>{client.name}</option>
-        ))}
-      </select>
-
-      <input type="date" className="w-full p-3 border rounded mb-3" id="report-date" defaultValue={new Date().toISOString().split('T')[0]} />
-
-      <button
-        onClick={() => {
-          const clientId = document.getElementById('report-client').value;
-          const date = document.getElementById('report-date').value;
-          if (!clientId || !date) return setError('Select client and date!');
-
-          const report = calculateCoverageReport(clientId, date);
-          if (report.error) {
-            setError(report.error);
-            return;
-          }
-
-          let reportText = `📊 COVERAGE REPORT\n\n`;
-          reportText += `Client: ${report.clientName}\n`;
-          reportText += `Date: ${report.date} (${report.dayName})\n`;
-          reportText += `Business Hours: ${report.businessHours.start} - ${report.businessHours.end}\n`;
-          reportText += `Total Coverage: ${report.totalCoverage.toFixed(1)}%\n\n`;
-          reportText += `EMPLOYEE DETAILS:\n`;
-          report.coverage.forEach(c => {
-            const user = Object.values(users).find(u => u.employeeId === c.employeeId);
-            reportText += `\n${user?.name || c.employeeId}:\n`;
-            reportText += `  Scheduled: ${c.scheduled?.start || 'N/A'} - ${c.scheduled?.end || 'N/A'}\n`;
-            reportText += `  Attended: ${c.attended ? 'Yes' : 'No'}\n`;
-            reportText += `  Coverage: ${c.coverageMinutes.toFixed(0)} minutes\n`;
-            reportText += `  Adherence: ${c.adherence.toFixed(1)}%\n`;
-          });
-
-          // FIX: Replaced alert with console.log and a success message
-          console.log(reportText);
-          setSuccess('Report generated and logged to console.');
-        }}
-        className="bg-indigo-500 text-white px-6 py-3 rounded font-bold hover:bg-indigo-600"
-      >
-        📈 Generate Report
-      </button>
-    </div>
-  </div>
-)}
-
-{/* Users Management View */}
-{view === 'users' && currentUser.role === 'admin' && (
-  <div className="bg-white rounded-lg shadow-lg p-6">
-    <h2 className="text-3xl font-bold mb-4">👥 User Management</h2>
-
-    <div className="space-y-4">
-      {Object.entries(users).map(([username, user]) => (
-        user.role !== 'admin' && (
-          <div key={username} className={`border p-4 rounded ${user.blocked ? 'bg-red-50' : 'bg-gray-50'}`}>
-            <div className="flex justify-between items-start">
-              <div>
-                <h4 className="font-bold text-lg">{user.name}</h4>
-                <p className="text-sm text-gray-600">@{username} • ID: {user.employeeId}</p>
-                <p className="text-sm text-gray-600">Role: {user.role}</p>
-                {user.blocked && (
-                  <span className="inline-block mt-2 bg-red-500 text-white px-2 py-1 rounded text-xs font-bold">
-                    🚫 BLOCKED
-                  </span>
-                )}
-              </div>
-              <div className="flex gap-2">
-                {user.blocked ? (
-                  <button
-                    onClick={() => unblockUser(username)}
-                    className="bg-green-500 text-white px-3 py-1 rounded text-sm font-bold hover:bg-green-600"
-                  >
-                    ✅ Unblock
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => blockUser(username)}
-                    className="bg-yellow-500 text-white px-3 py-1 rounded text-sm font-bold hover:bg-yellow-600"
-                  >
-                    🚫 Block
-                  </button>
-                )}
-                <button
-                  onClick={() => deleteUser(username)}
-                  className="bg-red-500 text-white px-3 py-1 rounded text-sm font-bold hover:bg-red-600"
-                >
-                  🗑️ Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        )
-      ))}
-    </div>
-  </div>
-)}
-  {/* This is a duplicate section from the original file, removing it */}
-  {/* {view === 'schedules' && ... } */}
-
-{/* Client Management View */}
-  {/* This is a duplicate section from the original file, removing it */}
-  {/* {view === 'clients' && ... } */}
-
-
-        {view === 'attendance' && (
+ {view === 'attendance' && (
           <div className="bg-white rounded-lg shadow-lg p-6">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold">📅 Attendance Management</h2>
@@ -1760,13 +1374,13 @@ const calculateCoverageReport = (clientId, date) => {
                   <div className="mt-4">
                     <p className="font-semibold mb-2">Acknowledged by:</p>
                     <div className="space-y-2">
-                      {Object.entries(memo.acknowledgedBy || {}).map(([empId, ack]) => (
+                      {Object.entries(memo.acknowledgedBy).map(([empId, ack]) => (
                         <div key={empId} className="p-2 bg-white rounded flex items-center gap-2">
                           <CheckCircle className="text-green-500" size={16} />
                           <span className="text-sm">{ack.name} - {new Date(ack.date).toLocaleString()}</span>
                         </div>
                       ))}
-                      {Object.keys(memo.acknowledgedBy || {}).length === 0 && (
+                      {Object.keys(memo.acknowledgedBy).length === 0 && (
                         <p className="text-sm text-gray-500">No acknowledgments yet</p>
                       )}
                     </div>
@@ -1804,7 +1418,7 @@ const calculateCoverageReport = (clientId, date) => {
                             ref={signatureRef}
                             width="400"
                             height="150"
-                            className="border rounded mb-2 cursor-crosshair bg-white"
+                            className="border rounded mb-2 cursor-crosshair"
                             onMouseDown={startDrawing}
                             onMouseMove={draw}
                             onMouseUp={stopDrawing}
@@ -1843,9 +1457,6 @@ const calculateCoverageReport = (clientId, date) => {
                       )}
                     </div>
                   ))}
-                  {coachingLogs.filter(log => log.employeeId === currentUser.employeeId).length === 0 && (
-                    <p className="text-gray-500 text-center py-4">No coaching logs</p>
-                  )}
                 </div>
               </div>
 
@@ -1882,7 +1493,7 @@ const calculateCoverageReport = (clientId, date) => {
                             ref={signatureRef}
                             width="400"
                             height="150"
-                            className="border rounded mb-2 cursor-crosshair bg-white"
+                            className="border rounded mb-2 cursor-crosshair"
                             onMouseDown={startDrawing}
                             onMouseMove={draw}
                             onMouseUp={stopDrawing}
@@ -1921,9 +1532,6 @@ const calculateCoverageReport = (clientId, date) => {
                       )}
                     </div>
                   ))}
-                  {infractions.filter(ir => ir.employeeId === currentUser.employeeId).length === 0 && (
-                    <p className="text-gray-500 text-center py-4">No infractions</p>
-                  )}
                 </div>
               </div>
 
@@ -1931,7 +1539,7 @@ const calculateCoverageReport = (clientId, date) => {
                 <h3 className="text-xl font-bold mb-4 text-indigo-600">📢 Memos</h3>
                 <div className="space-y-4">
                   {memos.map(memo => {
-                    const acknowledged = memo.acknowledgedBy?.[currentUser.employeeId];
+                    const acknowledged = memo.acknowledgedBy[currentUser.employeeId];
                     return (
                       <div key={memo.id} className="border rounded-lg p-4 bg-indigo-50">
                         <h4 className="text-lg font-bold mb-2">{memo.title}</h4>
@@ -1946,7 +1554,7 @@ const calculateCoverageReport = (clientId, date) => {
                               ref={signatureRef}
                               width="400"
                               height="150"
-                              className="border rounded mb-2 cursor-crosshair bg-white"
+                              className="border rounded mb-2 cursor-crosshair"
                               onMouseDown={startDrawing}
                               onMouseMove={draw}
                               onMouseUp={stopDrawing}
@@ -1985,9 +1593,6 @@ const calculateCoverageReport = (clientId, date) => {
                       </div>
                     );
                   })}
-                  {memos.length === 0 && (
-                    <p className="text-gray-500 text-center py-4">No memos</p>
-                  )}
                 </div>
               </div>
             </div>
@@ -2050,6 +1655,187 @@ const calculateCoverageReport = (clientId, date) => {
           </div>
         )}
 
+        {/* Schedule Management View */}
+{view === 'schedules' && currentUser.role === 'admin' && (
+  <div className="bg-white rounded-lg shadow-lg p-6">
+    <h2 className="text-3xl font-bold mb-4">📅 Schedule Management</h2>
+
+    <div className="mb-6">
+      <h3 className="text-xl font-bold mb-3">Set User Schedule</h3>
+      <select className="w-full p-3 border rounded mb-3" id="schedule-user">
+        <option value="">Select Employee</option>
+        {Object.entries(users).map(([username, user]) => (
+          user.role !== 'admin' && (
+            <option key={username} value={user.employeeId}>
+              {user.name} ({user.employeeId})
+            </option>
+          )
+        ))}
+      </select>
+
+      <div className="grid grid-cols-2 gap-4 mb-3">
+        {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => (
+          <div key={day} className="border p-3 rounded">
+            <h4 className="font-bold capitalize mb-2">{day}</h4>
+            <input type="time" className="w-full p-2 border rounded mb-2" placeholder="Start" id={`${day}-start`} />
+            <input type="time" className="w-full p-2 border rounded" placeholder="End" id={`${day}-end`} />
+          </div>
+        ))}
+      </div>
+
+      <button
+        onClick={() => {
+          const empId = document.getElementById('schedule-user').value;
+          if (!empId) return setError('Select an employee!');
+
+          const schedule = {};
+          ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].forEach(day => {
+            const start = document.getElementById(`${day}-start`).value;
+            const end = document.getElementById(`${day}-end`).value;
+            if (start && end) {
+              schedule[day] = { start, end };
+            }
+          });
+
+          setUserSchedule(empId, schedule);
+        }}
+        className="bg-blue-500 text-white px-6 py-3 rounded font-bold hover:bg-blue-600"
+      >
+        Save Schedule
+      </button>
+    </div>
+
+    <div>
+      <h3 className="text-xl font-bold mb-3">Current Schedules</h3>
+      {Object.entries(schedules).map(([empId, schedule]) => (
+        <div key={empId} className="border p-4 rounded mb-3">
+          <h4 className="font-bold">{empId}</h4>
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            {Object.entries(schedule).map(([day, times]) => (
+              times.start && (
+                <div key={day} className="text-sm">
+                  <strong className="capitalize">{day}:</strong> {times.start} - {times.end}
+                </div>
+              )
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
+
+{/* Client Management View */}
+{view === 'clients' && currentUser.role === 'admin' && (
+  <div className="bg-white rounded-lg shadow-lg p-6">
+    <h2 className="text-3xl font-bold mb-4">🏢 Client Management</h2>
+
+    <div className="mb-6">
+      <h3 className="text-xl font-bold mb-3">Add New Client</h3>
+      <input
+        type="text"
+        placeholder="Client Name"
+        className="w-full p-3 border rounded mb-3"
+        id="client-name"
+      />
+
+      <h4 className="font-bold mb-2">Business Hours</h4>
+      <div className="grid grid-cols-2 gap-4 mb-3">
+        {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => (
+          <div key={day} className="border p-3 rounded">
+            <h4 className="font-bold capitalize mb-2">{day}</h4>
+            <input type="time" className="w-full p-2 border rounded mb-2" id={`client-${day}-start`} />
+            <input type="time" className="w-full p-2 border rounded" id={`client-${day}-end`} />
+          </div>
+        ))}
+      </div>
+
+      <button
+        onClick={() => {
+          const name = document.getElementById('client-name').value;
+          if (!name) return setError('Enter client name!');
+
+          const hours = {};
+          ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].forEach(day => {
+            const start = document.getElementById(`client-${day}-start`).value;
+            const end = document.getElementById(`client-${day}-end`).value;
+            if (start && end) {
+              hours[day] = { start, end };
+            }
+          });
+
+          addClient(name, hours);
+          document.getElementById('client-name').value = '';
+        }}
+        className="bg-green-500 text-white px-6 py-3 rounded font-bold hover:bg-green-600"
+      >
+        Add Client
+      </button>
+    </div>
+
+    <div className="mb-6">
+      <h3 className="text-xl font-bold mb-3">Assign Users to Clients</h3>
+      <select className="w-full p-3 border rounded mb-3" id="assign-client">
+        <option value="">Select Client</option>
+        {Object.entries(clients).map(([id, client]) => (
+          <option key={id} value={id}>{client.name}</option>
+        ))}
+      </select>
+
+      <select className="w-full p-3 border rounded mb-3" id="assign-user">
+        <option value="">Select Employee</option>
+        {Object.entries(users).map(([username, user]) => (
+          user.role !== 'admin' && (
+            <option key={username} value={user.employeeId}>
+              {user.name} ({user.employeeId})
+            </option>
+          )
+        ))}
+      </select>
+
+      <button
+        onClick={() => {
+          const clientId = document.getElementById('assign-client').value;
+          const empId = document.getElementById('assign-user').value;
+          if (!clientId || !empId) return setError('Select both client and employee!');
+          assignUserToClient(empId, clientId);
+        }}
+        className="bg-purple-500 text-white px-6 py-3 rounded font-bold hover:bg-purple-600"
+      >
+        Assign User
+      </button>
+    </div>
+
+    <div>
+      <h3 className="text-xl font-bold mb-3">Coverage Report</h3>
+      <select className="w-full p-3 border rounded mb-3" id="report-client">
+        <option value="">Select Client</option>
+        {Object.entries(clients).map(([id, client]) => (
+          <option key={id} value={id}>{client.name}</option>
+        ))}
+      </select>
+
+      <input type="date" className="w-full p-3 border rounded mb-3" id="report-date" />
+
+      <button
+        onClick={() => {
+          const clientId = document.getElementById('report-client').value;
+          const date = document.getElementById('report-date').value;
+          if (!clientId || !date) return setError('Select client and date!');
+
+          const report = generateCoverageReport(clientId, date);
+          console.log('Coverage Report:', report);
+          // You can display this in a modal or download as CSV
+          alert(JSON.stringify(report, null, 2));
+        }}
+        className="bg-indigo-500 text-white px-6 py-3 rounded font-bold hover:bg-indigo-600"
+      >
+        Generate Report
+      </button>
+    </div>
+  </div>
+)}
+
         {view === 'media' && (
           <div className="bg-white rounded-lg shadow-lg p-6">
             <h2 className="text-2xl font-bold mb-6">📸 Team Gallery - Meme Central! 🎉</h2>
@@ -2073,26 +1859,22 @@ const calculateCoverageReport = (clientId, date) => {
                   const caption = document.getElementById('mediaCaption').value;
                   const url = document.getElementById('mediaUrl').value;
                   if (caption && url) {
-                    try {
-                      const mediaRef = ref(database, 'media');
-                      const newMediaRef = push(mediaRef);
-
-                      await set(newMediaRef, {
-                        id: Date.now(),
-                        caption,
-                        url,
-                        uploadedBy: currentUser.name,
-                        employeeId: currentUser.employeeId,
-                        date: new Date().toISOString(),
-                        reactions: {}
-                      });
-
-                      document.getElementById('mediaCaption').value = '';
-                      document.getElementById('mediaUrl').value = '';
-                      addToFeed(`${currentUser.name} posted a new pic! 📸`, 'media');
-                    } catch (error) {
-                      setError('Failed to upload: ' + error.message);
-                    }
+                    const mediaData = await storage.get('media', true) || [];
+                    mediaData.unshift({
+                      id: Date.now(),
+                      caption,
+                      url,
+                      uploadedBy: currentUser.name,
+                      employeeId: currentUser.employeeId,
+                      date: new Date().toISOString(),
+                      reactions: {}
+                    });
+                    if (mediaData.length > 50) mediaData.pop();
+                    await storage.set('media', mediaData, true);
+                    setMedia(mediaData);
+                    document.getElementById('mediaCaption').value = '';
+                    document.getElementById('mediaUrl').value = '';
+                    addToFeed(`${currentUser.name} posted a new pic! 📸`, 'media');
                   }
                 }}
                 className="bg-pink-500 text-white px-4 py-2 rounded font-bold hover:bg-pink-600"
@@ -2115,21 +1897,14 @@ const calculateCoverageReport = (clientId, date) => {
                         <button
                           key={emoji}
                           onClick={async () => {
-                            try {
-                              const mediaRef = ref(database, 'media');
-                              const snapshot = await get(mediaRef);
-                              const mediaData = snapshot.val();
-
-                              for (let key in mediaData) {
-                                if (mediaData[key].id === item.id) {
-                                  const reactions = mediaData[key].reactions || {};
-                                  reactions[emoji] = (reactions[emoji] || 0) + 1;
-                                  await update(ref(database, `media/${key}`), { reactions });
-                                  break;
-                                }
-                              }
-                            } catch (error) {
-                              console.error('Failed to add reaction:', error);
+                            const mediaData = await storage.get('media', true) || [];
+                            const mediaItem = mediaData.find(m => m.id === item.id);
+                            if (mediaItem) {
+                              if (!mediaItem.reactions) mediaItem.reactions = {};
+                              if (!mediaItem.reactions[emoji]) mediaItem.reactions[emoji] = 0;
+                              mediaItem.reactions[emoji]++;
+                              await storage.set('media', mediaData, true);
+                              setMedia(mediaData);
                             }
                           }}
                           className="text-lg hover:scale-125 transition"
