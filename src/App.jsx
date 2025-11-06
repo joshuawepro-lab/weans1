@@ -134,15 +134,9 @@ const WeAnswerDispatch = () => {
 
       const today = new Date().toDateString();
       const userIP = 'DESKTOP-' + Math.random().toString(36).substr(2, 9);
-      const lastLogin = user.loginHistory?[user.loginHistory.length - 1];
-
-     // if (user.role !== 'admin') {
-       // const lastLogin = user.loginHistory?.[user.loginHistory.length - 1];
-        //if (lastLogin && lastLogin.date === today && lastLogin.ip !== userIP) {
-         // setError('Already logged in from another device today! 🖥️');
-          //return;
-        //}
-      }
+       const lastLogin = user.loginHistory?.[user.loginHistory.length - 1];
+        
+     }
 
       user.loginHistory = user.loginHistory || [];
       user.loginHistory.push({ date: today, ip: userIP, time: new Date().toLocaleTimeString() });
