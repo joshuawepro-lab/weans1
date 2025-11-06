@@ -309,38 +309,72 @@ if (user.blocked) {
     setFeed(feedData);
   };
 
-  const postCoachingLog = async (employeeId, content) => {
-    const logs = await db.get('coaching-logs') || [];
-    logs.push({
-      id: Date.now(),
-      employeeId,
-      content,
-      date: new Date().toISOString(),
-      acknowledged: false,
-      signature: null,
-      comment: ''
-    });
-    await db.set('coaching-logs', logs);
-    setCoachingLogs(logs);
-    addToFeed(`📋 New coaching log posted for ${employeeId}`, 'coaching');
-  };
+  const postCoachingLog = async (employeeId, content, category) => {
+  try {
+    const logsRef = ref(database, 'coaching-logs');
+    const newLogRef = push(logsRef);
 
-  const postInfraction = async (employeeId, content, severity) => {
-    const irs = await db.get('infractions') || [];
-    irs.push({
+    await set(newLogRef, {
       id: Date.now(),
       employeeId,
       content,
-      severity,
+      category: category || 'general',
       date: new Date().toISOString(),
       acknowledged: false,
       signature: null,
       comment: ''
     });
-    await db.set('infractions', irs);
-    setInfractions(irs);
-    addToFeed(`⚠️ Infraction report issued to ${employeeId}`, 'infraction');
-  };
+
+    addToFeed(`📋 New coaching log posted for ${employeeId} (${category})`, 'coaching');
+  } catch (error) {
+    setError('Failed to post coaching log: ' + error.message);
+  }
+};
+
+
+  const postInfraction = async (employeeId, ruleCode, additionalNotes) => {
+  try {
+    const rule = INFRACTION_RULES[ruleCode];
+    if (!rule) {
+      setError('Invalid infraction rule code!');
+      return;
+    }
+
+    // Check for repeat offenses
+    const existingIrs = await get(ref(database, 'infractions'));
+    const employeeInfractions = existingIrs.val()
+      ? Object.values(existingIrs.val()).filter(ir =>
+          ir.employeeId === employeeId && ir.ruleCode === ruleCode
+        )
+      : [];
+
+    const occurrenceCount = employeeInfractions.length + 1;
+
+    const irsRef = ref(database, 'infractions');
+    const newIrRef = push(irsRef);
+
+    await set(newIrRef, {
+      id: Date.now(),
+      employeeId,
+      ruleCode,
+      rule: rule.rule,
+      section: rule.section,
+      description: rule.description,
+      level: rule.level,
+      additionalNotes: additionalNotes || '',
+      occurrenceCount,
+      date: new Date().toISOString(),
+      acknowledged: false,
+      signature: null,
+      comment: ''
+    });
+
+    addToFeed(`⚠️ Infraction report issued to ${employeeId} (${rule.level} - ${occurrenceCount}${occurrenceCount === 1 ? 'st' : occurrenceCount === 2 ? 'nd' : occurrenceCount === 3 ? 'rd' : 'th'} offense)`, 'infraction');
+    setSuccess(`Infraction issued! This is the ${occurrenceCount}${occurrenceCount === 1 ? 'st' : occurrenceCount === 2 ? 'nd' : occurrenceCount === 3 ? 'rd' : 'th'} offense for this rule.`);
+  } catch (error) {
+    setError('Failed to post infraction: ' + error.message);
+  }
+};
 
   const postMemo = async (title, content) => {
     const memoData = await db.get('memos') || [];
@@ -1171,165 +1205,294 @@ const calculateCoverageReport = (clientId, date) => {
         )}
 
         {view === 'coaching' && currentUser.role === 'admin' && (
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h2 className="text-2xl font-bold mb-6">📋 Coaching Logs</h2>
+  <div className="bg-white rounded-lg shadow-lg p-6">
+    <h2 className="text-2xl font-bold mb-6">📋 Coaching Logs</h2>
 
-            <div className="mb-6 p-4 bg-blue-50 rounded-lg">
-              <h3 className="font-bold mb-3">Create New Coaching Log</h3>
-              <select
-                id="coachingEmpId"
-                className="w-full p-2 border rounded mb-2"
-              >
-                <option value="">Select Employee</option>
-                {Object.entries(users).filter(([u, data]) => data.role !== 'admin').map(([username, data]) => (
-                  <option key={data.employeeId} value={data.employeeId}>
-                    {data.name} ({data.employeeId})
-                  </option>
-                ))}
-              </select>
-              <textarea
-                id="coachingContent"
-                placeholder="Coaching log content..."
-                className="w-full p-2 border rounded mb-2"
-                rows="4"
-              />
-              <button
-                onClick={() => {
-                  const empId = document.getElementById('coachingEmpId').value;
-                  const content = document.getElementById('coachingContent').value;
-                  if (empId && content) {
-                    postCoachingLog(empId, content);
-                    document.getElementById('coachingEmpId').value = '';
-                    document.getElementById('coachingContent').value = '';
-                  }
-                }}
-                className="bg-green-500 text-white px-4 py-2 rounded font-bold hover:bg-green-600"
-              >
-                Post Coaching Log
-              </button>
-            </div>
+    <div className="mb-6 p-4 bg-blue-50 rounded-lg">
+      <h3 className="font-bold mb-3">Create New Coaching Log</h3>
+      <select
+        id="coachingEmpId"
+        className="w-full p-2 border rounded mb-2"
+      >
+        <option value="">Select Employee</option>
+        {Object.entries(users).filter(([u, data]) => data.role !== 'admin').map(([username, data]) => (
+          <option key={data.employeeId} value={data.employeeId}>
+            {data.name} ({data.employeeId})
+          </option>
+        ))}
+      </select>
 
-            <div className="space-y-4">
-              {coachingLogs.map(log => (
-                <div key={log.id} className="border rounded-lg p-4 bg-yellow-50">
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <p className="font-bold">Employee ID: {log.employeeId}</p>
-                      <p className="text-sm text-gray-600">{new Date(log.date).toLocaleString()}</p>
-                    </div>
-                    {log.acknowledged && (
-                      <span className="bg-green-500 text-white px-3 py-1 rounded-full text-sm font-bold">
-                        ✅ Acknowledged
-                      </span>
-                    )}
-                  </div>
-                  <p className="mb-3">{log.content}</p>
+      <select
+        id="coachingCategory"
+        className="w-full p-2 border rounded mb-2"
+      >
+        <option value="">Select Category</option>
+        <option value="attendance">Attendance</option>
+        <option value="performance">Performance</option>
+        <option value="behavior">Behavior</option>
+        <option value="company-policy">Company Policy</option>
+      </select>
+
+      <textarea
+        id="coachingContent"
+        placeholder="Coaching log content..."
+        className="w-full p-2 border rounded mb-2"
+        rows="4"
+      />
+      <button
+        onClick={() => {
+          const empId = document.getElementById('coachingEmpId').value;
+          const category = document.getElementById('coachingCategory').value;
+          const content = document.getElementById('coachingContent').value;
+          if (empId && category && content) {
+            postCoachingLog(empId, content, category);
+            document.getElementById('coachingEmpId').value = '';
+            document.getElementById('coachingCategory').value = '';
+            document.getElementById('coachingContent').value = '';
+          } else {
+            setError('Fill all fields!');
+          }
+        }}
+        className="bg-green-500 text-white px-4 py-2 rounded font-bold hover:bg-green-600"
+      >
+        Post Coaching Log
+      </button>
+    </div>
+
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse">
+        <thead>
+          <tr className="bg-yellow-500 text-white">
+            <th className="border p-3 text-left">Employee Name</th>
+            <th className="border p-3 text-left">Coaching For</th>
+            <th className="border p-3 text-left">Coaching Logs</th>
+            <th className="border p-3 text-center">Acknowledged</th>
+            <th className="border p-3 text-center">Signed</th>
+            <th className="border p-3 text-left">Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          {coachingLogs.map(log => {
+            const employee = Object.values(users).find(u => u.employeeId === log.employeeId);
+            const employeeName = employee?.name || log.employeeId;
+
+            return (
+              <tr key={log.id} className="hover:bg-yellow-50">
+                <td className="border p-3 font-semibold">{employeeName}</td>
+                <td className="border p-3">
+                  <span className={`inline-block px-3 py-1 rounded-full text-sm font-bold ${
+                    log.category === 'attendance' ? 'bg-blue-100 text-blue-800' :
+                    log.category === 'performance' ? 'bg-green-100 text-green-800' :
+                    log.category === 'behavior' ? 'bg-orange-100 text-orange-800' :
+                    'bg-purple-100 text-purple-800'
+                  }`}>
+                    {log.category ? log.category.replace('-', ' ').toUpperCase() : 'N/A'}
+                  </span>
+                </td>
+                <td className="border p-3">
+                  <p className="text-sm">{log.content}</p>
                   {log.comment && (
-                    <div className="mt-3 p-3 bg-white rounded">
-                      <p className="text-sm font-semibold">Employee Comment:</p>
-                      <p className="text-sm">{log.comment}</p>
+                    <div className="mt-2 p-2 bg-gray-100 rounded text-xs">
+                      <strong>Employee Comment:</strong> {log.comment}
                     </div>
                   )}
-                  {log.signature && (
-                    <div className="mt-3">
-                      <p className="text-sm font-semibold mb-2">Signature:</p>
-                      <img src={log.signature} alt="Signature" className="border rounded max-w-xs" />
-                    </div>
+                </td>
+                <td className="border p-3 text-center">
+                  {log.acknowledged ? (
+                    <span className="text-green-600 font-bold text-2xl">✓</span>
+                  ) : (
+                    <span className="text-red-600 font-bold text-2xl">✗</span>
                   )}
-                </div>
-              ))}
-            </div>
-          </div>
+                </td>
+                <td className="border p-3 text-center">
+                  {log.signature ? (
+                    <button
+                      onClick={() => {
+                        const win = window.open();
+                        win.document.write(`<img src="${log.signature}" />`);
+                      }}
+                      className="text-green-600 font-bold text-2xl hover:text-green-800"
+                    >
+                      ✓
+                    </button>
+                  ) : (
+                    <span className="text-red-600 font-bold text-2xl">✗</span>
+                  )}
+                </td>
+                <td className="border p-3 text-sm">
+                  {new Date(log.date).toLocaleDateString()}<br/>
+                  <span className="text-gray-500">{new Date(log.date).toLocaleTimeString()}</span>
+                </td>
+              </tr>
+            );
+          })}
+          {coachingLogs.length === 0 && (
+            <tr>
+              <td colSpan="6" className="border p-8 text-center text-gray-500">
+                No coaching logs yet.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  </div>
+)}
         )}
 
         {view === 'infractions' && currentUser.role === 'admin' && (
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h2 className="text-2xl font-bold mb-6">⚠️ Infraction Reports</h2>
+  <div className="bg-white rounded-lg shadow-lg p-6">
+    <h2 className="text-2xl font-bold mb-6">⚠️ Infraction Reports</h2>
 
-            <div className="mb-6 p-4 bg-red-50 rounded-lg">
-              <h3 className="font-bold mb-3">Create New Infraction Report</h3>
-              <select
-                id="irEmpId"
-                className="w-full p-2 border rounded mb-2"
-              >
-                <option value="">Select Employee</option>
-                {Object.entries(users).filter(([u, data]) => data.role !== 'admin').map(([username, data]) => (
-                  <option key={data.employeeId} value={data.employeeId}>
-                    {data.name} ({data.employeeId})
-                  </option>
-                ))}
-              </select>
-              <select id="irSeverity" className="w-full p-2 border rounded mb-2">
-                <option value="minor">Minor</option>
-                <option value="moderate">Moderate</option>
-                <option value="severe">Severe</option>
-              </select>
-              <textarea
-                id="irContent"
-                placeholder="Infraction details..."
-                className="w-full p-2 border rounded mb-2"
-                rows="4"
-              />
-              <button
-                onClick={() => {
-                  const empId = document.getElementById('irEmpId').value;
-                  const content = document.getElementById('irContent').value;
-                  const severity = document.getElementById('irSeverity').value;
-                  if (empId && content) {
-                    postInfraction(empId, content, severity);
-                    document.getElementById('irEmpId').value = '';
-                    document.getElementById('irContent').value = '';
-                  }
-                }}
-                className="bg-red-500 text-white px-4 py-2 rounded font-bold hover:bg-red-600"
-              >
-                Issue Infraction Report
-              </button>
-            </div>
+    <div className="mb-6 p-4 bg-red-50 rounded-lg">
+      <h3 className="font-bold mb-3">Create New Infraction Report</h3>
 
-            <div className="space-y-4">
-              {infractions.map(ir => (
-                <div key={ir.id} className={`border-2 rounded-lg p-4 ${
-                  ir.severity === 'severe' ? 'bg-red-100 border-red-500' :
-                  ir.severity === 'moderate' ? 'bg-orange-100 border-orange-500' :
-                  'bg-yellow-100 border-yellow-500'
-                }`}>
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <p className="font-bold">Employee ID: {ir.employeeId}</p>
-                      <p className="text-sm text-gray-600">{new Date(ir.date).toLocaleString()}</p>
-                      <span className={`inline-block mt-1 px-2 py-1 rounded text-xs font-bold ${
-                        ir.severity === 'severe' ? 'bg-red-500 text-white' :
-                        ir.severity === 'moderate' ? 'bg-orange-500 text-white' :
-                        'bg-yellow-500 text-white'
-                      }`}>
-                        {ir.severity.toUpperCase()}
-                      </span>
+      <select
+        id="irEmpId"
+        className="w-full p-2 border rounded mb-2"
+      >
+        <option value="">Select Employee</option>
+        {Object.entries(users).filter(([u, data]) => data.role !== 'admin').map(([username, data]) => (
+          <option key={data.employeeId} value={data.employeeId}>
+            {data.name} ({data.employeeId})
+          </option>
+        ))}
+      </select>
+
+      <select id="irRuleCode" className="w-full p-2 border rounded mb-2">
+        <option value="">Select Infraction Rule</option>
+        {Object.entries(INFRACTION_RULES).map(([code, rule]) => (
+          <option key={code} value={code}>
+            {rule.rule} - Section {rule.section}: {rule.description.substring(0, 80)}...
+          </option>
+        ))}
+      </select>
+
+      <textarea
+        id="irAdditionalNotes"
+        placeholder="Additional notes/context (optional)..."
+        className="w-full p-2 border rounded mb-2"
+        rows="3"
+      />
+
+      <button
+        onClick={() => {
+          const empId = document.getElementById('irEmpId').value;
+          const ruleCode = document.getElementById('irRuleCode').value;
+          const notes = document.getElementById('irAdditionalNotes').value;
+
+          if (empId && ruleCode) {
+            postInfraction(empId, ruleCode, notes);
+            document.getElementById('irEmpId').value = '';
+            document.getElementById('irRuleCode').value = '';
+            document.getElementById('irAdditionalNotes').value = '';
+          } else {
+            setError('Select employee and rule!');
+          }
+        }}
+        className="bg-red-500 text-white px-4 py-2 rounded font-bold hover:bg-red-600"
+      >
+        Issue Infraction Report
+      </button>
+    </div>
+
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse">
+        <thead>
+          <tr className="bg-red-500 text-white">
+            <th className="border p-2 text-left">Employee</th>
+            <th className="border p-2 text-left">Rule</th>
+            <th className="border p-2 text-left">Section</th>
+            <th className="border p-2 text-left">Description</th>
+            <th className="border p-2">Level</th>
+            <th className="border p-2">Occurrence</th>
+            <th className="border p-2">Ack</th>
+            <th className="border p-2">Signed</th>
+            <th className="border p-2 text-left">Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          {infractions.map(ir => {
+            const employee = Object.values(users).find(u => u.employeeId === ir.employeeId);
+            const employeeName = employee?.name || ir.employeeId;
+
+            return (
+              <tr key={ir.id} className={`hover:bg-red-50 ${
+                ir.level === 'Serious Infraction' ? 'bg-red-100' :
+                ir.level === 'Less Serious Infraction' ? 'bg-orange-50' :
+                'bg-yellow-50'
+              }`}>
+                <td className="border p-2 font-semibold">{employeeName}</td>
+                <td className="border p-2 text-sm">{ir.rule}</td>
+                <td className="border p-2 text-center font-bold">{ir.section}</td>
+                <td className="border p-2 text-sm">
+                  {ir.description}
+                  {ir.additionalNotes && (
+                    <div className="mt-2 p-2 bg-gray-100 rounded text-xs">
+                      <strong>Notes:</strong> {ir.additionalNotes}
                     </div>
-                    {ir.acknowledged && (
-                      <span className="bg-green-500 text-white px-3 py-1 rounded-full text-sm font-bold">
-                        ✅ Acknowledged
-                      </span>
-                    )}
-                  </div>
-                  <p className="mb-3">{ir.content}</p>
+                  )}
                   {ir.comment && (
-                    <div className="mt-3 p-3 bg-white rounded">
-                      <p className="text-sm font-semibold">Employee Comment:</p>
-                      <p className="text-sm">{ir.comment}</p>
+                    <div className="mt-2 p-2 bg-blue-50 rounded text-xs">
+                      <strong>Employee Comment:</strong> {ir.comment}
                     </div>
                   )}
-                  {ir.signature && (
-                    <div className="mt-3">
-                      <p className="text-sm font-semibold mb-2">Signature:</p>
-                      <img src={ir.signature} alt="Signature" className="border rounded max-w-xs" />
-                    </div>
+                </td>
+                <td className="border p-2 text-center">
+                  <span className={`inline-block px-2 py-1 rounded text-xs font-bold ${
+                    ir.level === 'Serious Infraction' ? 'bg-red-500 text-white' :
+                    ir.level === 'Less Serious Infraction' ? 'bg-orange-500 text-white' :
+                    'bg-yellow-500 text-white'
+                  }`}>
+                    {ir.level}
+                  </span>
+                </td>
+                <td className="border p-2 text-center">
+                  <span className="font-bold text-lg">
+                    {ir.occurrenceCount}{ir.occurrenceCount === 1 ? 'st' : ir.occurrenceCount === 2 ? 'nd' : ir.occurrenceCount === 3 ? 'rd' : 'th'}
+                  </span>
+                </td>
+                <td className="border p-2 text-center">
+                  {ir.acknowledged ? (
+                    <span className="text-green-600 font-bold text-2xl">✓</span>
+                  ) : (
+                    <span className="text-red-600 font-bold text-2xl">✗</span>
                   )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+                </td>
+                <td className="border p-2 text-center">
+                  {ir.signature ? (
+                    <button
+                      onClick={() => {
+                        const win = window.open();
+                        win.document.write(`<img src="${ir.signature}" />`);
+                      }}
+                      className="text-green-600 font-bold text-2xl hover:text-green-800"
+                    >
+                      ✓
+                    </button>
+                  ) : (
+                    <span className="text-red-600 font-bold text-2xl">✗</span>
+                  )}
+                </td>
+                <td className="border p-2 text-xs">
+                  {new Date(ir.date).toLocaleDateString()}<br/>
+                  {new Date(ir.date).toLocaleTimeString()}
+                </td>
+              </tr>
+            );
+          })}
+          {infractions.length === 0 && (
+            <tr>
+              <td colSpan="9" className="border p-8 text-center text-gray-500">
+                No infractions issued yet.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  </div>
+)}
 
         {view === 'memos' && currentUser.role === 'admin' && (
           <div className="bg-white rounded-lg shadow-lg p-6">
